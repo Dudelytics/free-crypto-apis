@@ -5,6 +5,13 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+permissions:
+  contents: read
+  issues: write
+
+env:
+  ISSUE_TITLE: "Nightly link check: dead documentation links"
+
 jobs:
   validate-links:
     name: Check README links
@@ -24,4 +31,54 @@ jobs:
         run: npm ci
 
       - name: Validate links
-        run: npm run validate:links
+        id: validate
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run validate:links 2>&1 | tee link-report.txt
+
+      - name: Look up the tracking issue
+        id: tracker
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          number=$(gh issue list --state open --limit 100 --json number,title \
+            --jq 'map(select(.title == env.ISSUE_TITLE)) | first | .number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Report dead links
+        if: steps.validate.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.tracker.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "The nightly link check could not reach these documentation URLs."
+            echo
+            echo '```'
+            grep '^FAIL ' link-report.txt || echo "See the run log for details."
+            echo '```'
+            echo
+            echo "Last checked $(date -u '+%Y-%m-%d %H:%M UTC') in [this run]($RUN_URL)."
+            echo
+            echo "This issue is maintained by the nightly link check and closes on its own once every link resolves again."
+          } > issue-body.md
+
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh issue edit "$ISSUE_NUMBER" --body-file issue-body.md
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file issue-body.md
+          fi
+
+      - name: Close the tracking issue
+        if: steps.validate.outcome == 'success' && steps.tracker.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.tracker.outputs.number }}
+        run: |
+          gh issue close "$ISSUE_NUMBER" --comment "Every README link resolved in the latest nightly check."
+
+      - name: Fail if any link is dead
+        if: steps.validate.outcome == 'failure'
+        run: exit 1
