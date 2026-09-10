@@ -150,3 +150,72 @@ test("validateReadme rejects categories that are not alphabetical", () => {
     ),
   );
 });
+
+test("parseReadme keeps rows whose free-plan note ends with the word API", () => {
+  const readme = validReadme.replace(
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free tier with API key | `apiKey` | [Docs](https://alpha.test/docs) |",
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free quickstart plan on the public API | No | [Docs](https://alpha.test/docs) |",
+  );
+
+  const parsed = parseReadme(readme);
+
+  assert.deepEqual(
+    parsed.catalog.categories[0]?.rows.map((row) => row.apiName),
+    ["Alpha"],
+  );
+  assert.deepEqual(validateReadme(readme), []);
+});
+
+test("validateReadme still checks a row whose free-plan note ends with the word API", () => {
+  const readme = validReadme.replace(
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free tier with API key | `apiKey` | [Docs](https://alpha.test/docs) |",
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free quickstart plan on the public API | `Token` | [Docs](https://alpha.test/docs) |",
+  );
+
+  const issues = validateReadme(readme);
+
+  assert.ok(issues.some((issue) => issue.includes("Invalid Auth value `Token` for API: Alpha")));
+});
+
+test("parseReadme keeps rows whose description contains a triple hyphen", () => {
+  const readme = validReadme.replace(
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free tier with API key | `apiKey` | [Docs](https://alpha.test/docs) |",
+    "| [Alpha](https://alpha.test/docs) | Prices --- market snapshots | Free tier with API key | `Token` | [Docs](https://alpha.test/docs) |",
+  );
+
+  const issues = validateReadme(readme);
+
+  assert.ok(issues.some((issue) => issue.includes("Invalid Auth value `Token` for API: Alpha")));
+});
+
+test("parseReadme skips only the header and delimiter rows", () => {
+  const parsed = parseReadme(validReadme);
+
+  for (const category of parsed.catalog.categories) {
+    assert.equal(category.rows.length, 1);
+    assert.deepEqual(category.malformedRows, []);
+  }
+});
+
+test("parseReadme accepts short and aligned delimiter rows", () => {
+  const readme = validReadme.replace("|---|---|---|---|---|", "|:-|:-:|-|-:|-|");
+
+  const parsed = parseReadme(readme);
+
+  assert.deepEqual(
+    parsed.catalog.categories[0]?.rows.map((row) => row.apiName),
+    ["Alpha"],
+  );
+  assert.deepEqual(parsed.catalog.categories[0]?.malformedRows, []);
+});
+
+test("validateReadme reports a malformed row instead of skipping it", () => {
+  const readme = validReadme.replace(
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free tier with API key | `apiKey` | [Docs](https://alpha.test/docs) |",
+    "| [Alpha](https://alpha.test/docs) | Prices and market snapshots | Free tier with API key | [Docs](https://alpha.test/docs) |",
+  );
+
+  const issues = validateReadme(readme);
+
+  assert.ok(issues.some((issue) => issue.startsWith("Malformed row in Market Data: expected 5 columns")));
+});

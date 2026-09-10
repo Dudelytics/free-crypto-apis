@@ -18,6 +18,7 @@ export type ReadmeRow = {
 export type CatalogCategory = {
   name: string;
   rows: ReadmeRow[];
+  malformedRows: string[];
 };
 
 export type ParsedReadme = {
@@ -30,6 +31,9 @@ export type ParsedReadme = {
 
 const SECTION_HEADING_PATTERN = /^## (.+)$/gm;
 const CATEGORY_HEADING_PATTERN = /^### (.+)$/gm;
+const DELIMITER_CELL_PATTERN = /^:?-+:?$/;
+
+const TABLE_HEADERS = ["API", "What It Is Good For", "Free Plan", "Auth", "Docs"] as const;
 
 function extractSectionContent(readme: string, startHeading: string, endHeading: string): string {
   const startToken = `## ${startHeading}`;
@@ -56,13 +60,26 @@ function extractSections(readme: string): Set<string> {
   return sections;
 }
 
-function parseRow(line: string): ReadmeRow | null {
-  const columns = line
+function splitCells(line: string): string[] {
+  return line
     .split("|")
     .slice(1, -1)
     .map((cell) => cell.trim());
+}
 
-  if (columns.length !== 5) {
+function isDelimiterRow(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((cell) => DELIMITER_CELL_PATTERN.test(cell));
+}
+
+function isHeaderRow(cells: string[]): boolean {
+  return (
+    cells.length === TABLE_HEADERS.length &&
+    cells.every((cell, index) => cell.toLowerCase() === TABLE_HEADERS[index]!.toLowerCase())
+  );
+}
+
+function parseRow(columns: string[]): ReadmeRow | null {
+  if (columns.length !== TABLE_HEADERS.length) {
     return null;
   }
 
@@ -75,16 +92,31 @@ function parseRow(line: string): ReadmeRow | null {
   };
 }
 
-function parseCategoryRows(block: string): ReadmeRow[] {
-  const lines = block
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("|"));
+function parseCategoryRows(block: string): Pick<CatalogCategory, "rows" | "malformedRows"> {
+  const rows: ReadmeRow[] = [];
+  const malformedRows: string[] = [];
 
-  return lines
-    .filter((line) => !line.includes("---") && !line.includes("API |"))
-    .map((line) => parseRow(line))
-    .filter((row): row is ReadmeRow => row !== null);
+  for (const line of block.split("\n").map((candidate) => candidate.trim())) {
+    if (!line.startsWith("|")) {
+      continue;
+    }
+
+    const cells = splitCells(line);
+
+    if (isDelimiterRow(cells) || isHeaderRow(cells)) {
+      continue;
+    }
+
+    const row = parseRow(cells);
+
+    if (row) {
+      rows.push(row);
+    } else {
+      malformedRows.push(line);
+    }
+  }
+
+  return { rows, malformedRows };
 }
 
 function parseCategories(section: string): CatalogCategory[] {
@@ -100,7 +132,7 @@ function parseCategories(section: string): CatalogCategory[] {
 
     categories.push({
       name: match[1]!.trim(),
-      rows: parseCategoryRows(block),
+      ...parseCategoryRows(block),
     });
   }
 

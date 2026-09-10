@@ -89,6 +89,10 @@ export function validateReadme(readme: string): string[] {
   }
 
   for (const category of parsed.catalog.categories) {
+    for (const malformedRow of category.malformedRows) {
+      issues.push(`Malformed row in ${category.name}: expected 5 columns in \`${malformedRow}\``);
+    }
+
     validateRows(category.rows, issues);
 
     for (let index = 1; index < category.rows.length; index += 1) {
