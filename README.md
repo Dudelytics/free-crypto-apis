@@ -4,6 +4,8 @@
 
 This catalog focuses on APIs that are practical to try for free, whether through public endpoints, generous free tiers, or no-cost developer access.
 
+> **Maintained by the CoinStats team.** If you want a single key that covers prices, charts, wallets, exchanges, DeFi positions, and news rather than combining several of the APIs below, the [CoinStats API](https://coinstats.app/api/) has a free plan with monthly credits. Every other entry here meets the same free-access standard, competitors included.
+
 ## Quick Index
 
 - [API Categories](#api-categories)
